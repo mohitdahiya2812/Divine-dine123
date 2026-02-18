@@ -77,7 +77,7 @@ function addNormal(id) {
 function openCustomize(id) {
   let item = menu.find(m => m.id === id);
 
-  document.getElementById("app").innerHTML += `
+  document.body.innerHTML += `
     <div id="popup" style="
       position:fixed;
       top:0;left:0;right:0;bottom:0;
@@ -86,4 +86,77 @@ function openCustomize(id) {
       justify-content:center;
       align-items:center;">
       
-      <div st
+      <div style="background:white;padding:20px;width:300px;border-radius:8px;">
+        <h3>${item.name}</h3>
+
+        <label><input type="checkbox" value="Butter"> Extra Butter (+₹10)</label><br>
+        <label><input type="checkbox" value="Ghee"> Extra Ghee (+₹10)</label><br>
+        <label><input type="checkbox" value="Spicy"> Extra Spicy (+₹10)</label><br><br>
+
+        <textarea id="instructions" placeholder="Special instructions"
+          style="width:100%;height:60px;"></textarea><br><br>
+
+        <button class="btn" onclick="addCustomized(${id})">Add to Cart</button>
+        <button class="btn" onclick="closePopup()">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+function closePopup() {
+  document.getElementById("popup").remove();
+}
+
+function addCustomized(id) {
+  let item = menu.find(m => m.id === id);
+  let checkboxes = document.querySelectorAll("#popup input[type=checkbox]:checked");
+  let instructions = document.getElementById("instructions").value;
+
+  let addons = [];
+  let addonTotal = 0;
+
+  checkboxes.forEach(cb => {
+    addons.push(cb.value);
+    addonTotal += 10;
+  });
+
+  let totalPrice = item.price + addonTotal;
+
+  cart.push({
+    name: item.name,
+    basePrice: item.price,
+    addons: addons,
+    instructions: instructions,
+    totalPrice: totalPrice
+  });
+
+  closePopup();
+  renderMenu();
+}
+
+function renderCart() {
+  let subtotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
+  let gst = subtotal * gstRate;
+  let total = subtotal + gst;
+
+  let itemsHTML = cart.map(item => `
+    <div style="border-bottom:1px solid #ddd;margin-bottom:8px;padding-bottom:5px;">
+      <strong>${item.name}</strong> - ₹${item.totalPrice}
+      ${item.addons.length ? `<br>Add-ons: ${item.addons.join(", ")}` : ""}
+      ${item.instructions ? `<br>Note: ${item.instructions}` : ""}
+    </div>
+  `).join("");
+
+  return `
+    <div class="cart">
+      <h3>Cart</h3>
+      ${itemsHTML || "<p>No items</p>"}
+      <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
+      <p>GST (5%): ₹${gst.toFixed(2)}</p>
+      <h3>Total: ₹${total.toFixed(2)}</h3>
+      <button class="btn">Proceed to Pay</button>
+    </div>
+  `;
+}
+
+renderLanguageSelection();
