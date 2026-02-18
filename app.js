@@ -1,6 +1,6 @@
 let languageSelected = false;
 let filter = "all";
-let cart = {};
+let cart = [];
 const gstRate = 0.05;
 
 const menu = [
@@ -30,25 +30,14 @@ function renderMenu() {
     filter === "all" ? true : filter === "veg" ? item.veg : !item.veg
   );
 
-  let menuHTML = filteredMenu.map(item => {
-    let qty = cart[item.id]?.qty || 0;
-
-    return `
-      <div class="card">
-        <h3>${item.name}</h3>
-        <p>₹${item.price}</p>
-        ${
-          qty === 0
-            ? `<button class="btn" onclick="addToCart(${item.id})">Add</button>`
-            : `
-              <button class="btn" onclick="decreaseQty(${item.id})">-</button>
-              <span style="margin:0 10px; font-weight:bold;">${qty}</span>
-              <button class="btn" onclick="increaseQty(${item.id})">+</button>
-            `
-        }
-      </div>
-    `;
-  }).join("");
+  let menuHTML = filteredMenu.map(item => `
+    <div class="card">
+      <h3>${item.name}</h3>
+      <p>₹${item.price}</p>
+      <button class="btn" onclick="addNormal(${item.id})">Add</button>
+      <button class="btn" onclick="openCustomize(${item.id})">Customize</button>
+    </div>
+  `).join("");
 
   document.getElementById("app").innerHTML = `
     <header>
@@ -60,7 +49,7 @@ function renderMenu() {
       </div>
     </header>
 
-    <div style="padding-bottom:240px;">
+    <div style="padding-bottom:300px;">
       ${menuHTML}
     </div>
 
@@ -73,40 +62,28 @@ function setFilter(type) {
   renderMenu();
 }
 
-function addToCart(id) {
-  cart[id] = { ...menu.find(m => m.id === id), qty: 1 };
+function addNormal(id) {
+  let item = menu.find(m => m.id === id);
+  cart.push({
+    name: item.name,
+    basePrice: item.price,
+    addons: [],
+    instructions: "",
+    totalPrice: item.price
+  });
   renderMenu();
 }
 
-function increaseQty(id) {
-  cart[id].qty += 1;
-  renderMenu();
-}
+function openCustomize(id) {
+  let item = menu.find(m => m.id === id);
 
-function decreaseQty(id) {
-  cart[id].qty -= 1;
-  if (cart[id].qty === 0) delete cart[id];
-  renderMenu();
-}
-
-function renderCart() {
-  let items = Object.values(cart);
-  let subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
-  let gst = subtotal * gstRate;
-  let total = subtotal + gst;
-
-  return `
-    <div class="cart">
-      <h3>Cart</h3>
-      <p>Items: ${items.reduce((sum, item) => sum + item.qty, 0)}</p>
-      <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
-      <p>GST (5%): ₹${gst.toFixed(2)}</p>
-      <h3>Total: ₹${total.toFixed(2)}</h3>
-      <button class="btn" onclick="alert('Payment system coming next')">
-        Proceed to Pay
-      </button>
-    </div>
-  `;
-}
-
-renderLanguageSelection();
+  document.getElementById("app").innerHTML += `
+    <div id="popup" style="
+      position:fixed;
+      top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,0.6);
+      display:flex;
+      justify-content:center;
+      align-items:center;">
+      
+      <div st
