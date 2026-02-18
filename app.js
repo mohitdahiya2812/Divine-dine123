@@ -34,7 +34,7 @@ function renderMenu() {
     <div class="card">
       <h3>${item.name}</h3>
       <p>₹${item.price}</p>
-      <button class="btn" onclick="addNormal(${item.id})">Add</button>
+      <button class="btn" onclick="addToCart(${item.id})">Add</button>
       <button class="btn" onclick="openCustomize(${item.id})">Customize</button>
     </div>
   `).join("");
@@ -62,16 +62,28 @@ function setFilter(type) {
   renderMenu();
 }
 
-function addNormal(id) {
+function addToCart(id, addons = [], instructions = "") {
   let item = menu.find(m => m.id === id);
-  cart.push({
-    name: item.name,
-    basePrice: item.price,
-    addons: [],
-    instructions: "",
-    qty: 1,
-    totalPrice: item.price
-  });
+
+  let existing = cart.find(ci =>
+    ci.id === id &&
+    JSON.stringify(ci.addons) === JSON.stringify(addons) &&
+    ci.instructions === instructions
+  );
+
+  if (existing) {
+    existing.qty += 1;
+  } else {
+    cart.push({
+      id: id,
+      name: item.name,
+      basePrice: item.price,
+      addons: addons,
+      instructions: instructions,
+      qty: 1
+    });
+  }
+
   renderMenu();
 }
 
@@ -109,29 +121,14 @@ function closePopup() {
 }
 
 function addCustomized(id) {
-  let item = menu.find(m => m.id === id);
   let checkboxes = document.querySelectorAll("#popup input[type=checkbox]:checked");
   let instructions = document.getElementById("instructions").value;
 
   let addons = [];
-  let addonTotal = 0;
+  checkboxes.forEach(cb => addons.push(cb.value));
 
-  checkboxes.forEach(cb => {
-    addons.push(cb.value);
-    addonTotal += 10;
-  });
-
-  cart.push({
-    name: item.name,
-    basePrice: item.price,
-    addons: addons,
-    instructions: instructions,
-    qty: 1,
-    totalPrice: item.price + addonTotal
-  });
-
+  addToCart(id, addons, instructions);
   closePopup();
-  renderMenu();
 }
 
 function increaseQty(index) {
@@ -141,39 +138,44 @@ function increaseQty(index) {
 
 function decreaseQty(index) {
   cart[index].qty -= 1;
-  if (cart[index].qty <= 0) {
-    cart.splice(index, 1);
-  }
+  if (cart[index].qty <= 0) cart.splice(index, 1);
   renderMenu();
 }
 
 function renderCart() {
-  let subtotal = cart.reduce((sum, item) => sum + item.totalPrice * item.qty, 0);
+  let subtotal = 0;
+
+  let itemsHTML = cart.map((item, index) => {
+    let addonTotal = item.addons.length * 10;
+    let itemPrice = (item.basePrice + addonTotal) * item.qty;
+    subtotal += itemPrice;
+
+    return `
+      <div style="
+        background:#fff;
+        padding:10px;
+        margin-bottom:10px;
+        border-radius:8px;
+        box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+        
+        <strong>${item.name}</strong>
+        ${item.addons.length ? `<div style="font-size:12px;color:#555;">Add-ons: ${item.addons.join(", ")}</div>` : ""}
+        ${item.instructions ? `<div style="font-size:12px;color:#777;">Note: ${item.instructions}</div>` : ""}
+        
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;">
+          <div>
+            <button class="btn" onclick="decreaseQty(${index})">-</button>
+            <span style="margin:0 10px;">${item.qty}</span>
+            <button class="btn" onclick="increaseQty(${index})">+</button>
+          </div>
+          <div>₹${itemPrice.toFixed(2)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
   let gst = subtotal * gstRate;
   let total = subtotal + gst;
-
-  let itemsHTML = cart.map((item, index) => `
-    <div style="
-      background:#fff;
-      padding:10px;
-      margin-bottom:10px;
-      border-radius:8px;
-      box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-      
-      <strong>${item.name}</strong>
-      ${item.addons.length ? `<div style="font-size:12px;color:#555;">Add-ons: ${item.addons.join(", ")}</div>` : ""}
-      ${item.instructions ? `<div style="font-size:12px;color:#777;">Note: ${item.instructions}</div>` : ""}
-      
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;">
-        <div>
-          <button class="btn" onclick="decreaseQty(${index})">-</button>
-          <span style="margin:0 10px;">${item.qty}</span>
-          <button class="btn" onclick="increaseQty(${index})">+</button>
-        </div>
-        <div>₹${(item.totalPrice * item.qty).toFixed(2)}</div>
-      </div>
-    </div>
-  `).join("");
 
   return `
     <div class="cart">
