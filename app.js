@@ -1,6 +1,6 @@
 let languageSelected = false;
 let filter = "all";
-let cart = [];
+let cart = {};
 const gstRate = 0.05;
 
 const menu = [
@@ -30,13 +30,25 @@ function renderMenu() {
     filter === "all" ? true : filter === "veg" ? item.veg : !item.veg
   );
 
-  let menuHTML = filteredMenu.map(item => `
-    <div class="card">
-      <h3>${item.name}</h3>
-      <p>₹${item.price}</p>
-      <button class="btn" onclick="addToCart(${item.id})">Add</button>
-    </div>
-  `).join("");
+  let menuHTML = filteredMenu.map(item => {
+    let qty = cart[item.id]?.qty || 0;
+
+    return `
+      <div class="card">
+        <h3>${item.name}</h3>
+        <p>₹${item.price}</p>
+        ${
+          qty === 0
+            ? `<button class="btn" onclick="addToCart(${item.id})">Add</button>`
+            : `
+              <button class="btn" onclick="decreaseQty(${item.id})">-</button>
+              <span style="margin:0 10px; font-weight:bold;">${qty}</span>
+              <button class="btn" onclick="increaseQty(${item.id})">+</button>
+            `
+        }
+      </div>
+    `;
+  }).join("");
 
   document.getElementById("app").innerHTML = `
     <header>
@@ -48,7 +60,7 @@ function renderMenu() {
       </div>
     </header>
 
-    <div style="padding-bottom:200px;">
+    <div style="padding-bottom:240px;">
       ${menuHTML}
     </div>
 
@@ -62,24 +74,37 @@ function setFilter(type) {
 }
 
 function addToCart(id) {
-  let item = menu.find(m => m.id === id);
-  cart.push(item);
+  cart[id] = { ...menu.find(m => m.id === id), qty: 1 };
+  renderMenu();
+}
+
+function increaseQty(id) {
+  cart[id].qty += 1;
+  renderMenu();
+}
+
+function decreaseQty(id) {
+  cart[id].qty -= 1;
+  if (cart[id].qty === 0) delete cart[id];
   renderMenu();
 }
 
 function renderCart() {
-  let subtotal = cart.reduce((sum, item) => sum + item.price, 0);
+  let items = Object.values(cart);
+  let subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
   let gst = subtotal * gstRate;
   let total = subtotal + gst;
 
   return `
     <div class="cart">
       <h3>Cart</h3>
-      <p>Items: ${cart.length}</p>
+      <p>Items: ${items.reduce((sum, item) => sum + item.qty, 0)}</p>
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
       <p>GST (5%): ₹${gst.toFixed(2)}</p>
       <h3>Total: ₹${total.toFixed(2)}</h3>
-      <button class="btn" onclick="alert('Payment system coming next')">Proceed to Pay</button>
+      <button class="btn" onclick="alert('Payment system coming next')">
+        Proceed to Pay
+      </button>
     </div>
   `;
 }
