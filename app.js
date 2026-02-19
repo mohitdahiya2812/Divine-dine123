@@ -6,9 +6,10 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
-let orderLocked = false;
 let appliedCoupon = null;
 let currentCustomer = null;
+let orderLocked = false;
+
 const GST_RATE = 0.05;
 
 const menu = [
@@ -24,13 +25,14 @@ function generateBillId() {
 }
 
 function calculateSubtotal() {
-  return cart.reduce((s, i) => s + i.price * i.qty, 0);
+  return cart.reduce((sum, item) => sum + item.price * item.qty, 0);
 }
 
 function calculateDiscount(subtotal) {
   if (!appliedCoupon) return 0;
-  if (appliedCoupon.discount_type === "percentage")
+  if (appliedCoupon.discount_type === "percentage") {
     return (subtotal * appliedCoupon.discount_value) / 100;
+  }
   return appliedCoupon.discount_value;
 }
 
@@ -52,18 +54,25 @@ function renderMenu() {
 
 window.addToCart = function(id) {
   if (orderLocked) return;
+
   const item = menu.find(i => i.id === id);
   const existing = cart.find(c => c.id === id);
-  existing ? existing.qty++ : cart.push({ ...item, qty: 1 });
+
+  if (existing) existing.qty++;
+  else cart.push({ ...item, qty: 1 });
+
   renderCart();
 };
 
 window.changeQty = function(id, change) {
   if (orderLocked) return;
+
   const item = cart.find(c => c.id === id);
   if (!item) return;
+
   item.qty += change;
   if (item.qty <= 0) cart = cart.filter(c => c.id !== id);
+
   renderCart();
 };
 
@@ -79,7 +88,7 @@ window.checkCustomer = async function() {
   if (data && data.length > 0) {
     currentCustomer = data[0];
     document.getElementById("custName").value = currentCustomer.name;
-    alert("Welcome back " + currentCustomer.name + "!");
+    alert("Welcome back " + currentCustomer.name);
   } else {
     currentCustomer = null;
     document.getElementById("custName").value = "";
@@ -87,18 +96,24 @@ window.checkCustomer = async function() {
 };
 
 window.applyCoupon = async function() {
-  const code = document.getElementById("couponInput").value.trim();
-  if (!code) return alert("Enter coupon code");
+  const codeInput = document.getElementById("couponInput").value.trim();
+  if (!codeInput) {
+    alert("Enter coupon code");
+    return;
+  }
 
+  const code = codeInput.toUpperCase();
   const subtotal = calculateSubtotal();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("coupons")
     .select("*")
-    .eq("code", code);
+    .ilike("code", code);
 
-  if (!data || data.length === 0)
-    return alert("Invalid coupon");
+  if (error || !data || data.length === 0) {
+    alert("Invalid coupon");
+    return;
+  }
 
   const coupon = data[0];
   const now = new Date();
@@ -115,7 +130,7 @@ window.applyCoupon = async function() {
 
   appliedCoupon = coupon;
   renderCart();
-  alert("Coupon Applied Successfully!");
+  alert("Coupon Applied Successfully");
 };
 
 window.removeCoupon = function() {
@@ -125,7 +140,10 @@ window.removeCoupon = function() {
 
 function renderCart() {
   const cartSection = document.getElementById("cartSection");
-  if (!cart.length) return (cartSection.innerHTML = "");
+  if (!cart.length) {
+    cartSection.innerHTML = "";
+    return;
+  }
 
   const subtotal = calculateSubtotal();
   const discount = calculateDiscount(subtotal);
@@ -145,12 +163,13 @@ function renderCart() {
         </div>
       `).join("")}
       <hr>
-
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
 
       ${appliedCoupon ? `
-        <p style="color:green;">Coupon: ${appliedCoupon.code}
-        <button onclick="removeCoupon()">Remove</button></p>
+        <p style="color:green;">
+          Coupon: ${appliedCoupon.code}
+          <button onclick="removeCoupon()">Remove</button>
+        </p>
         <p style="color:green;">Discount: -₹${discount.toFixed(2)}</p>
       ` : ""}
 
@@ -174,7 +193,10 @@ window.placeOrder = async function() {
   const phone = document.getElementById("custPhone").value.trim();
   const name = document.getElementById("custName").value.trim();
 
-  if (!phone || !name) return alert("Enter phone and name");
+  if (!phone || !name) {
+    alert("Enter phone and name");
+    return;
+  }
 
   orderLocked = true;
   const btn = document.getElementById("payBtn");
