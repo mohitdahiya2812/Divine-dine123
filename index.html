@@ -14,6 +14,7 @@ button { padding:8px 12px; margin:5px; cursor:pointer; }
 .card { background:white; padding:15px; margin:10px; border-radius:8px; }
 .cart { background:white; padding:15px; margin:10px; border-radius:8px; }
 .admin-btn { background:black; color:white; }
+input { padding:6px; margin:5px 0; width:100%; }
 </style>
 </head>
 
@@ -43,33 +44,37 @@ function renderHome() {
   `;
 }
 
-/* CUSTOMER */
+/* CUSTOMER MENU */
 async function renderCustomer() {
   const { data, error } = await supabase.from("menu").select("*");
 
   if (error) {
     document.getElementById("app").innerHTML = "Error loading menu";
+    console.log(error);
     return;
   }
 
   let html = `<button onclick="renderHome()">⬅ Back</button><h2>Menu</h2>`;
 
-  data.forEach(item => {
-    if (!item.is_available) return;
+  if (!data || data.length === 0) {
+    html += `<p>No items available</p>`;
+  } else {
+    data.forEach(item => {
+      if (!item.is_available) return;
 
-    html += `
-      <div class="card">
-        <h3>${item.name}</h3>
-        <p>₹ ${item.price}</p>
-        <button onclick="addToCart(${item.id}, '${item.name}', ${item.price})">
-          Add
-        </button>
-      </div>
-    `;
-  });
+      html += `
+        <div class="card">
+          <h3>${item.name}</h3>
+          <p>₹ ${item.price}</p>
+          <button onclick="addToCart(${item.id}, '${item.name}', ${item.price})">
+            Add
+          </button>
+        </div>
+      `;
+    });
+  }
 
   html += `<div class="cart">${renderCart()}</div>`;
-
   document.getElementById("app").innerHTML = html;
 }
 
@@ -78,6 +83,7 @@ function addToCart(id, name, price) {
   renderCustomer();
 }
 
+/* CART */
 function renderCart() {
   if (cart.length === 0) return "Cart empty";
 
@@ -91,25 +97,26 @@ function renderCart() {
     <b>Discount: ₹${discountAmount}</b><br>
     <b>Payable: ₹${finalTotal}</b><br><br>
 
-    <input id="couponInput" placeholder="Enter Coupon">
-    <button onclick="applyCoupon()">Apply</button>
+    <input id="couponInput" placeholder="Enter Coupon Code">
+    <button onclick="applyCoupon()">Apply Coupon</button>
     <br><br>
 
     <button onclick="placeOrder()">Proceed to Pay</button>
   `;
 }
 
+/* COUPON */
 async function applyCoupon() {
   let code = document.getElementById("couponInput").value.trim();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("coupons")
     .select("*")
     .eq("code", code)
     .eq("is_active", true)
     .single();
 
-  if (!data) {
+  if (error || !data) {
     alert("Invalid Coupon");
     return;
   }
@@ -117,10 +124,11 @@ async function applyCoupon() {
   let total = cart.reduce((sum, i) => sum + i.price, 0);
   discountAmount = Math.floor(total * 0.1);
 
-  alert("Coupon Applied!");
+  alert("Coupon Applied Successfully!");
   renderCustomer();
 }
 
+/* PLACE ORDER */
 async function placeOrder() {
   if (cart.length === 0) return alert("Cart empty");
 
@@ -132,7 +140,7 @@ async function placeOrder() {
   ]);
 
   if (error) {
-    alert("Order failed");
+    alert("Order saving failed");
     console.log(error);
     return;
   }
@@ -143,7 +151,7 @@ async function placeOrder() {
   renderCustomer();
 }
 
-/* ADMIN */
+/* ADMIN PANEL */
 function renderAdmin() {
   document.getElementById("app").innerHTML = `
     <button onclick="renderHome()">⬅ Back</button>
@@ -173,8 +181,10 @@ async function totalOrders() {
     `<h3>Total Orders</h3><p>${data.length}</p>`;
 }
 
+/* START */
 renderHome();
 
 </script>
+
 </body>
 </html>
