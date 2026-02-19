@@ -1,7 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 const SUPABASE_URL = "https://ivvsoqjnzlxmgthfscer.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"; // keep your existing key
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -20,6 +20,19 @@ const menu = [
 
 function generateBillId() {
   return "DD" + Date.now();
+}
+
+function calculateSubtotal() {
+  return cart.reduce((s, i) => s + i.price * i.qty, 0);
+}
+
+function calculateDiscount(subtotal) {
+  if (!appliedCoupon) return 0;
+
+  if (appliedCoupon.discount_type === "percentage") {
+    return (subtotal * appliedCoupon.discount_value) / 100;
+  }
+  return appliedCoupon.discount_value;
 }
 
 function renderMenu() {
@@ -55,11 +68,11 @@ window.changeQty = function(id, change) {
   renderCart();
 };
 
-async function applyCoupon() {
+window.applyCoupon = async function() {
   const code = document.getElementById("couponInput").value.trim();
   if (!code) return alert("Enter coupon code");
 
-  let subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const subtotal = calculateSubtotal();
 
   const { data: coupon, error } = await supabase
     .from("coupons")
@@ -69,40 +82,36 @@ async function applyCoupon() {
 
   if (error || !coupon) return alert("Invalid coupon");
 
-  if (!coupon.is_active) return alert("Coupon inactive");
-
   const now = new Date();
+
+  if (!coupon.is_active) return alert("Coupon inactive");
   if (coupon.valid_from && new Date(coupon.valid_from) > now)
     return alert("Coupon not started yet");
-
   if (coupon.valid_until && new Date(coupon.valid_until) < now)
     return alert("Coupon expired");
-
   if (coupon.min_order_value > subtotal)
     return alert("Minimum order not met");
-
   if (coupon.max_total_uses && coupon.total_used >= coupon.max_total_uses)
     return alert("Coupon usage limit reached");
 
-  let discount = 0;
-  if (coupon.discount_type === "percentage")
-    discount = (subtotal * coupon.discount_value) / 100;
-  else
-    discount = coupon.discount_value;
-
-  appliedCoupon = { ...coupon, discount };
-  alert("Coupon Applied!");
+  appliedCoupon = coupon;
   renderCart();
-}
+  alert("Coupon Applied Successfully!");
+};
+
+window.removeCoupon = function() {
+  appliedCoupon = null;
+  renderCart();
+};
 
 function renderCart() {
   const cartSection = document.getElementById("cartSection");
   if (!cart.length) return (cartSection.innerHTML = "");
 
-  let subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  let discount = appliedCoupon ? appliedCoupon.discount : 0;
-  let gst = (subtotal - discount) * GST_RATE;
-  let total = subtotal - discount + gst;
+  const subtotal = calculateSubtotal();
+  const discount = calculateDiscount(subtotal);
+  const gst = (subtotal - discount) * GST_RATE;
+  const total = subtotal - discount + gst;
 
   cartSection.innerHTML = `
     <div class="cart">
@@ -118,11 +127,21 @@ function renderCart() {
       `).join("")}
       <hr>
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
-      ${appliedCoupon ? `<p>Discount: -₹${discount.toFixed(2)}</p>` : ""}
+
+      ${appliedCoupon ? `
+        <p style="color:green;">
+          Coupon Applied (${appliedCoupon.code})
+          <button onclick="removeCoupon()">Remove</button>
+        </p>
+        <p style="color:green;">Discount: -₹${discount.toFixed(2)}</p>
+      ` : ""}
+
       <p>GST (5%): ₹${gst.toFixed(2)}</p>
       <h3>Total: ₹${total.toFixed(2)}</h3>
+
       <input id="couponInput" placeholder="Enter Coupon Code" style="width:100%;padding:8px;margin:5px 0;">
       <button onclick="applyCoupon()">Apply Coupon</button>
+
       <input id="custName" placeholder="Your Name" style="width:100%;padding:8px;margin:5px 0;">
       <input id="custPhone" placeholder="Phone Number" style="width:100%;padding:8px;margin:5px 0;">
       <button id="payBtn" onclick="placeOrder()">Proceed to Pay</button>
@@ -142,10 +161,10 @@ window.placeOrder = async function() {
   btn.disabled = true;
   btn.innerText = "Processing...";
 
-  let subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  let discount = appliedCoupon ? appliedCoupon.discount : 0;
-  let gst = (subtotal - discount) * GST_RATE;
-  let total = subtotal - discount + gst;
+  const subtotal = calculateSubtotal();
+  const discount = calculateDiscount(subtotal);
+  const gst = (subtotal - discount) * GST_RATE;
+  const total = subtotal - discount + gst;
   const billId = generateBillId();
 
   const { error } = await supabase.from("orders1").insert([
