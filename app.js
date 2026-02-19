@@ -1,13 +1,14 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 const SUPABASE_URL = "https://ivvsoqjnzlxmgthfscer.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"; // keep your existing key
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
 let orderLocked = false;
 let appliedCoupon = null;
+let currentCustomer = null;
 const GST_RATE = 0.05;
 
 const menu = [
@@ -28,10 +29,8 @@ function calculateSubtotal() {
 
 function calculateDiscount(subtotal) {
   if (!appliedCoupon) return 0;
-
-  if (appliedCoupon.discount_type === "percentage") {
+  if (appliedCoupon.discount_type === "percentage")
     return (subtotal * appliedCoupon.discount_value) / 100;
-  }
   return appliedCoupon.discount_value;
 }
 
@@ -68,20 +67,40 @@ window.changeQty = function(id, change) {
   renderCart();
 };
 
+window.checkCustomer = async function() {
+  const phone = document.getElementById("custPhone").value.trim();
+  if (!phone) return;
+
+  const { data } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("phone", phone);
+
+  if (data && data.length > 0) {
+    currentCustomer = data[0];
+    document.getElementById("custName").value = currentCustomer.name;
+    alert("Welcome back " + currentCustomer.name + "!");
+  } else {
+    currentCustomer = null;
+    document.getElementById("custName").value = "";
+  }
+};
+
 window.applyCoupon = async function() {
   const code = document.getElementById("couponInput").value.trim();
   if (!code) return alert("Enter coupon code");
 
   const subtotal = calculateSubtotal();
 
-  const { data: coupon, error } = await supabase
+  const { data } = await supabase
     .from("coupons")
     .select("*")
-    .eq("code", code)
-    .single();
+    .eq("code", code);
 
-  if (error || !coupon) return alert("Invalid coupon");
+  if (!data || data.length === 0)
+    return alert("Invalid coupon");
 
+  const coupon = data[0];
   const now = new Date();
 
   if (!coupon.is_active) return alert("Coupon inactive");
@@ -92,7 +111,7 @@ window.applyCoupon = async function() {
   if (coupon.min_order_value > subtotal)
     return alert("Minimum order not met");
   if (coupon.max_total_uses && coupon.total_used >= coupon.max_total_uses)
-    return alert("Coupon usage limit reached");
+    return alert("Coupon limit reached");
 
   appliedCoupon = coupon;
   renderCart();
@@ -126,13 +145,12 @@ function renderCart() {
         </div>
       `).join("")}
       <hr>
+
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
 
       ${appliedCoupon ? `
-        <p style="color:green;">
-          Coupon Applied (${appliedCoupon.code})
-          <button onclick="removeCoupon()">Remove</button>
-        </p>
+        <p style="color:green;">Coupon: ${appliedCoupon.code}
+        <button onclick="removeCoupon()">Remove</button></p>
         <p style="color:green;">Discount: -₹${discount.toFixed(2)}</p>
       ` : ""}
 
@@ -142,8 +160,9 @@ function renderCart() {
       <input id="couponInput" placeholder="Enter Coupon Code" style="width:100%;padding:8px;margin:5px 0;">
       <button onclick="applyCoupon()">Apply Coupon</button>
 
+      <input id="custPhone" placeholder="Phone Number" onblur="checkCustomer()" style="width:100%;padding:8px;margin:5px 0;">
       <input id="custName" placeholder="Your Name" style="width:100%;padding:8px;margin:5px 0;">
-      <input id="custPhone" placeholder="Phone Number" style="width:100%;padding:8px;margin:5px 0;">
+
       <button id="payBtn" onclick="placeOrder()">Proceed to Pay</button>
     </div>
   `;
@@ -152,9 +171,10 @@ function renderCart() {
 window.placeOrder = async function() {
   if (orderLocked) return;
 
-  const name = document.getElementById("custName").value.trim();
   const phone = document.getElementById("custPhone").value.trim();
-  if (!name || !phone) return alert("Enter name and phone");
+  const name = document.getElementById("custName").value.trim();
+
+  if (!phone || !name) return alert("Enter phone and name");
 
   orderLocked = true;
   const btn = document.getElementById("payBtn");
@@ -190,6 +210,27 @@ window.placeOrder = async function() {
     return;
   }
 
+  if (currentCustomer) {
+    await supabase.from("customers")
+      .update({
+        total_visits: currentCustomer.total_visits + 1,
+        total_spent: currentCustomer.total_spent + total,
+        last_visit: new Date()
+      })
+      .eq("phone", phone);
+  } else {
+    await supabase.from("customers").insert([
+      {
+        name,
+        phone,
+        total_visits: 1,
+        total_spent: total,
+        first_visit: new Date(),
+        last_visit: new Date()
+      }
+    ]);
+  }
+
   if (appliedCoupon) {
     await supabase.from("coupons")
       .update({ total_used: appliedCoupon.total_used + 1 })
@@ -200,6 +241,7 @@ window.placeOrder = async function() {
 
   cart = [];
   appliedCoupon = null;
+  currentCustomer = null;
   orderLocked = false;
   renderMenu();
 };
