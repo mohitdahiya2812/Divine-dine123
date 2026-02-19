@@ -6,7 +6,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
-let isProcessing = false;
+let orderLocked = false;
 const GST_RATE = 0.05;
 
 const menu = [
@@ -18,7 +18,7 @@ const menu = [
 ];
 
 function generateBillId() {
-  return "DD" + Math.floor(100000 + Math.random() * 900000);
+  return "DD" + Date.now();
 }
 
 function renderMenu() {
@@ -38,6 +38,8 @@ function renderMenu() {
 }
 
 window.addToCart = function(id) {
+  if (orderLocked) return;
+
   const item = menu.find(i => i.id === id);
   const existing = cart.find(c => c.id === id);
 
@@ -85,6 +87,8 @@ function renderCart() {
 }
 
 window.changeQty = function(id, change) {
+  if (orderLocked) return;
+
   const item = cart.find(c => c.id === id);
   if (!item) return;
 
@@ -97,92 +101,62 @@ window.changeQty = function(id, change) {
 };
 
 window.placeOrder = async function() {
-  if (isProcessing) return;
+  if (orderLocked) return;
 
   const button = document.getElementById("payBtn");
+  const name = document.getElementById("custName").value.trim();
+  const phone = document.getElementById("custPhone").value.trim();
+
+  if (!name || !phone) {
+    alert("Please enter name and phone");
+    return;
+  }
+
+  orderLocked = true;
   button.disabled = true;
   button.innerText = "Processing...";
-  isProcessing = true;
 
   try {
-    const name = document.getElementById("custName").value.trim();
-    const phone = document.getElementById("custPhone").value.trim();
-
-    if (!name || !phone) {
-      alert("Please enter name and phone");
-      button.disabled = false;
-      button.innerText = "Proceed to Pay";
-      isProcessing = false;
-      return;
-    }
-
     let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
     let gst = subtotal * GST_RATE;
     let total = subtotal + gst;
     const billId = generateBillId();
 
-    // INSERT ORDER
-    const { error: orderError } = await supabase.from("orders1").insert([
+    const { error } = await supabase.from("orders1").insert([
       {
         bill_id: billId,
         customer_phone: phone,
         customer_name: name,
         table_number: "T1",
-        items: JSON.parse(JSON.stringify(cart)),
+        items: cart,
         subtotal: subtotal,
         gst: gst,
         discount: 0,
         total_amount: total,
-        payment_mode: "Fake"
+        payment_mode: "QR"
       }
     ]);
 
-    if (orderError) {
-      console.error(orderError);
-      alert("Order saving failed");
+    if (error) {
+      console.error(error);
+      alert("Order failed. Try again.");
+      orderLocked = false;
       button.disabled = false;
       button.innerText = "Proceed to Pay";
-      isProcessing = false;
       return;
     }
 
-    // CHECK CUSTOMER
-    const { data: existingCustomer } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("phone", phone)
-      .single();
-
-    if (existingCustomer) {
-      await supabase.from("customers").update({
-        total_visits: existingCustomer.total_visits + 1,
-        total_spent: existingCustomer.total_spent + total,
-        last_visit: new Date()
-      }).eq("phone", phone);
-    } else {
-      await supabase.from("customers").insert([
-        {
-          name: name,
-          phone: phone,
-          total_visits: 1,
-          total_spent: total,
-          first_visit: new Date(),
-          last_visit: new Date()
-        }
-      ]);
-    }
-
-    alert("Order Placed Successfully! Bill ID: " + billId);
+    alert("Order Successful! Bill ID: " + billId);
 
     cart = [];
+    orderLocked = false;
     renderMenu();
 
   } catch (err) {
     console.error(err);
     alert("Unexpected error occurred");
+    orderLocked = false;
   }
-
-  isProcessing = false;
 };
 
 renderMenu();
