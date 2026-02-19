@@ -29,7 +29,8 @@ input { padding:6px; margin:5px 0; width:100%; }
 const supabaseUrl = "https://ivvsoqjnzlxmgthfscer.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
 
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+/* IMPORTANT FIX HERE */
+const sb = supabase.createClient(supabaseUrl, supabaseKey);
 
 let cart = [];
 let discountAmount = 0;
@@ -46,7 +47,7 @@ function renderHome() {
 
 /* CUSTOMER MENU */
 async function renderCustomer() {
-  const { data, error } = await supabase.from("menu").select("*");
+  const { data, error } = await sb.from("menu").select("*");
 
   if (error) {
     document.getElementById("app").innerHTML = "Error loading menu";
@@ -109,14 +110,14 @@ function renderCart() {
 async function applyCoupon() {
   let code = document.getElementById("couponInput").value.trim();
 
-  const { data, error } = await supabase
+  const { data } = await sb
     .from("coupons")
     .select("*")
     .eq("code", code)
     .eq("is_active", true)
     .single();
 
-  if (error || !data) {
+  if (!data) {
     alert("Invalid Coupon");
     return;
   }
@@ -124,7 +125,7 @@ async function applyCoupon() {
   let total = cart.reduce((sum, i) => sum + i.price, 0);
   discountAmount = Math.floor(total * 0.1);
 
-  alert("Coupon Applied Successfully!");
+  alert("Coupon Applied!");
   renderCustomer();
 }
 
@@ -135,7 +136,7 @@ async function placeOrder() {
   let total = cart.reduce((sum, i) => sum + i.price, 0);
   let finalTotal = total - discountAmount;
 
-  const { error } = await supabase.from("orders1").insert([
+  const { error } = await sb.from("orders1").insert([
     { total_amount: finalTotal }
   ]);
 
@@ -165,7 +166,7 @@ function renderAdmin() {
 }
 
 async function monthlySales() {
-  const { data } = await supabase.from("orders1").select("total_amount");
+  const { data } = await sb.from("orders1").select("total_amount");
 
   let total = 0;
   data.forEach(o => total += o.total_amount);
@@ -175,13 +176,12 @@ async function monthlySales() {
 }
 
 async function totalOrders() {
-  const { data } = await supabase.from("orders1").select("id");
+  const { data } = await sb.from("orders1").select("id");
 
   document.getElementById("adminData").innerHTML =
     `<h3>Total Orders</h3><p>${data.length}</p>`;
 }
 
-/* START */
 renderHome();
 
 </script>
