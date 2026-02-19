@@ -7,6 +7,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
 let orderLocked = false;
+let appliedCoupon = null;
 const GST_RATE = 0.05;
 
 const menu = [
@@ -39,34 +40,74 @@ function renderMenu() {
 
 window.addToCart = function(id) {
   if (orderLocked) return;
-
   const item = menu.find(i => i.id === id);
   const existing = cart.find(c => c.id === id);
-
-  if (existing) {
-    existing.qty++;
-  } else {
-    cart.push({ ...item, qty: 1 });
-  }
-
+  existing ? existing.qty++ : cart.push({ ...item, qty: 1 });
   renderCart();
 };
 
+window.changeQty = function(id, change) {
+  if (orderLocked) return;
+  const item = cart.find(c => c.id === id);
+  if (!item) return;
+  item.qty += change;
+  if (item.qty <= 0) cart = cart.filter(c => c.id !== id);
+  renderCart();
+};
+
+async function applyCoupon() {
+  const code = document.getElementById("couponInput").value.trim();
+  if (!code) return alert("Enter coupon code");
+
+  let subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+
+  const { data: coupon, error } = await supabase
+    .from("coupons")
+    .select("*")
+    .eq("code", code)
+    .single();
+
+  if (error || !coupon) return alert("Invalid coupon");
+
+  if (!coupon.is_active) return alert("Coupon inactive");
+
+  const now = new Date();
+  if (coupon.valid_from && new Date(coupon.valid_from) > now)
+    return alert("Coupon not started yet");
+
+  if (coupon.valid_until && new Date(coupon.valid_until) < now)
+    return alert("Coupon expired");
+
+  if (coupon.min_order_value > subtotal)
+    return alert("Minimum order not met");
+
+  if (coupon.max_total_uses && coupon.total_used >= coupon.max_total_uses)
+    return alert("Coupon usage limit reached");
+
+  let discount = 0;
+  if (coupon.discount_type === "percentage")
+    discount = (subtotal * coupon.discount_value) / 100;
+  else
+    discount = coupon.discount_value;
+
+  appliedCoupon = { ...coupon, discount };
+  alert("Coupon Applied!");
+  renderCart();
+}
+
 function renderCart() {
   const cartSection = document.getElementById("cartSection");
-  if (!cart.length) {
-    cartSection.innerHTML = "";
-    return;
-  }
+  if (!cart.length) return (cartSection.innerHTML = "");
 
-  let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  let gst = subtotal * GST_RATE;
-  let total = subtotal + gst;
+  let subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  let discount = appliedCoupon ? appliedCoupon.discount : 0;
+  let gst = (subtotal - discount) * GST_RATE;
+  let total = subtotal - discount + gst;
 
   cartSection.innerHTML = `
     <div class="cart">
       ${cart.map(item => `
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="display:flex;justify-content:space-between;">
           <span>${item.name}</span>
           <div>
             <button onclick="changeQty(${item.id}, -1)">-</button>
@@ -77,8 +118,11 @@ function renderCart() {
       `).join("")}
       <hr>
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
+      ${appliedCoupon ? `<p>Discount: -₹${discount.toFixed(2)}</p>` : ""}
       <p>GST (5%): ₹${gst.toFixed(2)}</p>
       <h3>Total: ₹${total.toFixed(2)}</h3>
+      <input id="couponInput" placeholder="Enter Coupon Code" style="width:100%;padding:8px;margin:5px 0;">
+      <button onclick="applyCoupon()">Apply Coupon</button>
       <input id="custName" placeholder="Your Name" style="width:100%;padding:8px;margin:5px 0;">
       <input id="custPhone" placeholder="Phone Number" style="width:100%;padding:8px;margin:5px 0;">
       <button id="payBtn" onclick="placeOrder()">Proceed to Pay</button>
@@ -86,77 +130,59 @@ function renderCart() {
   `;
 }
 
-window.changeQty = function(id, change) {
-  if (orderLocked) return;
-
-  const item = cart.find(c => c.id === id);
-  if (!item) return;
-
-  item.qty += change;
-  if (item.qty <= 0) {
-    cart = cart.filter(c => c.id !== id);
-  }
-
-  renderCart();
-};
-
 window.placeOrder = async function() {
   if (orderLocked) return;
 
-  const button = document.getElementById("payBtn");
   const name = document.getElementById("custName").value.trim();
   const phone = document.getElementById("custPhone").value.trim();
+  if (!name || !phone) return alert("Enter name and phone");
 
-  if (!name || !phone) {
-    alert("Please enter name and phone");
+  orderLocked = true;
+  const btn = document.getElementById("payBtn");
+  btn.disabled = true;
+  btn.innerText = "Processing...";
+
+  let subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  let discount = appliedCoupon ? appliedCoupon.discount : 0;
+  let gst = (subtotal - discount) * GST_RATE;
+  let total = subtotal - discount + gst;
+  const billId = generateBillId();
+
+  const { error } = await supabase.from("orders1").insert([
+    {
+      bill_id: billId,
+      customer_phone: phone,
+      customer_name: name,
+      table_number: "T1",
+      items: cart,
+      subtotal,
+      gst,
+      discount,
+      total_amount: total,
+      payment_mode: "QR"
+    }
+  ]);
+
+  if (error) {
+    alert("Order failed");
+    orderLocked = false;
+    btn.disabled = false;
+    btn.innerText = "Proceed to Pay";
     return;
   }
 
-  orderLocked = true;
-  button.disabled = true;
-  button.innerText = "Processing...";
-
-  try {
-    let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-    let gst = subtotal * GST_RATE;
-    let total = subtotal + gst;
-    const billId = generateBillId();
-
-    const { error } = await supabase.from("orders1").insert([
-      {
-        bill_id: billId,
-        customer_phone: phone,
-        customer_name: name,
-        table_number: "T1",
-        items: cart,
-        subtotal: subtotal,
-        gst: gst,
-        discount: 0,
-        total_amount: total,
-        payment_mode: "QR"
-      }
-    ]);
-
-    if (error) {
-      console.error(error);
-      alert("Order failed. Try again.");
-      orderLocked = false;
-      button.disabled = false;
-      button.innerText = "Proceed to Pay";
-      return;
-    }
-
-    alert("Order Successful! Bill ID: " + billId);
-
-    cart = [];
-    orderLocked = false;
-    renderMenu();
-
-  } catch (err) {
-    console.error(err);
-    alert("Unexpected error occurred");
-    orderLocked = false;
+  if (appliedCoupon) {
+    await supabase.from("coupons")
+      .update({ total_used: appliedCoupon.total_used + 1 })
+      .eq("id", appliedCoupon.id);
   }
+
+  alert("Order Successful! Bill ID: " + billId);
+
+  cart = [];
+  appliedCoupon = null;
+  orderLocked = false;
+  renderMenu();
 };
 
 renderMenu();
