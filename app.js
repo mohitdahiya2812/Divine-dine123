@@ -1,3 +1,19 @@
+// Supabase Connection (SAFE INITIALIZATION)
+
+const SUPABASE_URL = "https://ivvsoqjnzlxmgthfscer.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
+
+let supabaseClient = null;
+
+if (window.supabase) {
+  supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY
+  );
+  console.log("Supabase Connected");
+} else {
+  console.log("Supabase not loaded yet");
+}
 let languageSelected = false;
 let filter = "all";
 let cart = [];
