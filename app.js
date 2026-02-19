@@ -5,200 +5,157 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-console.log("Supabase Connected Properly");
-
-let languageSelected = false;
-let filter = "all";
 let cart = [];
-const gstRate = 0.05;
+const GST_RATE = 0.05;
 
 const menu = [
-  { id: 1, name: "Paneer Butter Masala", price: 260, veg: true },
-  { id: 2, name: "Dal Makhani", price: 220, veg: true },
-  { id: 3, name: "Veg Burger", price: 120, veg: true },
-  { id: 4, name: "Chicken Curry", price: 320, veg: false }
+  { id: 1, name: "Paneer Butter Masala", price: 220 },
+  { id: 2, name: "Dal Tadka", price: 160 },
+  { id: 3, name: "Veg Biryani", price: 180 },
+  { id: 4, name: "Butter Naan", price: 40 },
+  { id: 5, name: "Chicken Curry", price: 260 }
 ];
 
-function renderLanguageSelection() {
-  document.getElementById("app").innerHTML = `
-    <div style="text-align:center;padding:100px;">
-      <h1>Divine Dine</h1>
-      <button class="btn" onclick="selectLanguage()">English</button>
-      <button class="btn" onclick="selectLanguage()">हिंदी</button>
-    </div>
-  `;
-}
-
-function selectLanguage() {
-  languageSelected = true;
-  renderMenu();
+function generateBillId() {
+  return "DD" + Math.floor(100000 + Math.random() * 900000);
 }
 
 function renderMenu() {
-  let filteredMenu = menu.filter(item =>
-    filter === "all" ? true : filter === "veg" ? item.veg : !item.veg
-  );
-
-  let menuHTML = filteredMenu.map(item => `
-    <div class="card">
-      <h3>${item.name}</h3>
-      <p>₹${item.price}</p>
-      <button class="btn" onclick="addToCart(${item.id})">Add</button>
-      <button class="btn" onclick="openCustomize(${item.id})">Customize</button>
-    </div>
-  `).join("");
-
-  document.getElementById("app").innerHTML = `
-    <header>
-      <h2>Divine Dine</h2>
-      <div>
-        <button class="btn veg" onclick="setFilter('veg')">Veg</button>
-        <button class="btn nonveg" onclick="setFilter('nonveg')">Non-Veg</button>
-        <button class="btn" onclick="setFilter('all')">All</button>
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <h2 style="padding:15px;">Divine Dine</h2>
+    ${menu.map(item => `
+      <div class="card">
+        <h3>${item.name}</h3>
+        <p>₹${item.price}</p>
+        <button onclick="addToCart(${item.id})">Add</button>
       </div>
-    </header>
-
-    <div style="padding-bottom:350px;">
-      ${menuHTML}
-    </div>
-
-    ${renderCart()}
+    `).join("")}
+    <div id="cartSection"></div>
   `;
+  renderCart();
 }
 
-function setFilter(type) {
-  filter = type;
-  renderMenu();
-}
-
-function addToCart(id, addons = [], instructions = "") {
-  let item = menu.find(m => m.id === id);
-
-  let existing = cart.find(ci =>
-    ci.id === id &&
-    JSON.stringify(ci.addons) === JSON.stringify(addons) &&
-    ci.instructions === instructions
-  );
+window.addToCart = function(id) {
+  const item = menu.find(i => i.id === id);
+  const existing = cart.find(c => c.id === id);
 
   if (existing) {
-    existing.qty += 1;
+    existing.qty++;
   } else {
-    cart.push({
-      id: id,
-      name: item.name,
-      basePrice: item.price,
-      addons: addons,
-      instructions: instructions,
-      qty: 1
-    });
+    cart.push({ ...item, qty: 1 });
   }
 
-  renderMenu();
-}
-
-function openCustomize(id) {
-  let item = menu.find(m => m.id === id);
-
-  document.body.innerHTML += `
-    <div id="popup" style="
-      position:fixed;
-      top:0;left:0;right:0;bottom:0;
-      background:rgba(0,0,0,0.6);
-      display:flex;
-      justify-content:center;
-      align-items:center;">
-      
-      <div style="background:white;padding:20px;width:300px;border-radius:8px;">
-        <h3>${item.name}</h3>
-
-        <label><input type="checkbox" value="Butter"> Extra Butter (+₹10)</label><br>
-        <label><input type="checkbox" value="Ghee"> Extra Ghee (+₹10)</label><br>
-        <label><input type="checkbox" value="Spicy"> Extra Spicy (+₹10)</label><br><br>
-
-        <textarea id="instructions" placeholder="Special instructions"
-          style="width:100%;height:60px;"></textarea><br><br>
-
-        <button class="btn" onclick="addCustomized(${id})">Add to Cart</button>
-        <button class="btn" onclick="closePopup()">Cancel</button>
-      </div>
-    </div>
-  `;
-}
-
-function closePopup() {
-  document.getElementById("popup").remove();
-}
-
-function addCustomized(id) {
-  let checkboxes = document.querySelectorAll("#popup input[type=checkbox]:checked");
-  let instructions = document.getElementById("instructions").value;
-
-  let addons = [];
-  checkboxes.forEach(cb => addons.push(cb.value));
-
-  addToCart(id, addons, instructions);
-  closePopup();
-}
-
-function increaseQty(index) {
-  cart[index].qty += 1;
-  renderMenu();
-}
-
-function decreaseQty(index) {
-  cart[index].qty -= 1;
-  if (cart[index].qty <= 0) cart.splice(index, 1);
-  renderMenu();
-}
+  renderCart();
+};
 
 function renderCart() {
-  let subtotal = 0;
+  const cartSection = document.getElementById("cartSection");
+  if (!cart.length) {
+    cartSection.innerHTML = "";
+    return;
+  }
 
-  let itemsHTML = cart.map((item, index) => {
-    let addonTotal = item.addons.length * 10;
-    let itemPrice = (item.basePrice + addonTotal) * item.qty;
-    subtotal += itemPrice;
-
-    return `
-      <div style="
-        background:#fff;
-        padding:10px;
-        margin-bottom:10px;
-        border-radius:8px;
-        box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-        
-        <strong>${item.name}</strong>
-        ${item.addons.length ? `<div style="font-size:12px;color:#555;">Add-ons: ${item.addons.join(", ")}</div>` : ""}
-        ${item.instructions ? `<div style="font-size:12px;color:#777;">Note: ${item.instructions}</div>` : ""}
-        
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;">
-          <div>
-            <button class="btn" onclick="decreaseQty(${index})">-</button>
-            <span style="margin:0 10px;">${item.qty}</span>
-            <button class="btn" onclick="increaseQty(${index})">+</button>
-          </div>
-          <div>₹${itemPrice.toFixed(2)}</div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  let gst = subtotal * gstRate;
+  let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  let gst = subtotal * GST_RATE;
   let total = subtotal + gst;
 
-  return `
+  cartSection.innerHTML = `
     <div class="cart">
-      <h3>Cart</h3>
-      ${itemsHTML || "<p>No items added</p>"}
+      ${cart.map(item => `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span>${item.name}</span>
+          <div>
+            <button onclick="changeQty(${item.id}, -1)">-</button>
+            ${item.qty}
+            <button onclick="changeQty(${item.id}, 1)">+</button>
+          </div>
+        </div>
+      `).join("")}
       <hr>
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
       <p>GST (5%): ₹${gst.toFixed(2)}</p>
       <h3>Total: ₹${total.toFixed(2)}</h3>
-      <button class="btn" style="width:100%;background:#111;color:white;">
-        Proceed to Pay
-      </button>
+      <input id="custName" placeholder="Your Name" style="width:100%;padding:8px;margin:5px 0;">
+      <input id="custPhone" placeholder="Phone Number" style="width:100%;padding:8px;margin:5px 0;">
+      <button onclick="placeOrder()">Proceed to Pay</button>
     </div>
   `;
 }
 
-renderLanguageSelection();
+window.changeQty = function(id, change) {
+  const item = cart.find(c => c.id === id);
+  if (!item) return;
+
+  item.qty += change;
+  if (item.qty <= 0) {
+    cart = cart.filter(c => c.id !== id);
+  }
+
+  renderCart();
+};
+
+window.placeOrder = async function() {
+  const name = document.getElementById("custName").value;
+  const phone = document.getElementById("custPhone").value;
+
+  if (!name || !phone) {
+    alert("Please enter name and phone");
+    return;
+  }
+
+  let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  let gst = subtotal * GST_RATE;
+  let total = subtotal + gst;
+
+  const billId = generateBillId();
+
+  // Save Order
+  await supabase.from("orders1").insert([
+    {
+      bill_id: billId,
+      customer_phone: phone,
+      customer_name: name,
+      table_number: "T1",
+      items: cart,
+      subtotal: subtotal,
+      gst: gst,
+      discount: 0,
+      total_amount: total,
+      payment_mode: "Fake"
+    }
+  ]);
+
+  // Update or Insert Customer
+  const { data: existing } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("phone", phone)
+    .single();
+
+  if (existing) {
+    await supabase.from("customers").update({
+      total_visits: existing.total_visits + 1,
+      total_spent: existing.total_spent + total,
+      last_visit: new Date()
+    }).eq("phone", phone);
+  } else {
+    await supabase.from("customers").insert([
+      {
+        name: name,
+        phone: phone,
+        total_visits: 1,
+        total_spent: total,
+        first_visit: new Date(),
+        last_visit: new Date()
+      }
+    ]);
+  }
+
+  alert("Order Placed Successfully! Bill ID: " + billId);
+
+  cart = [];
+  renderMenu();
+};
+
+renderMenu();
