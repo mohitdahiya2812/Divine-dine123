@@ -2,28 +2,29 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 
 const SUPABASE_URL = "https://ivvsoqjnzlxmgthfscer.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
 let menuData = [];
-let adminMode = false;
 
 const GST_RATE = 0.05;
 
+/* ================= LOAD MENU ================= */
+
 async function loadMenu() {
-  const { data } = await supabase.from("menu").select("*").eq("is_available", true);
+  const { data } = await supabase
+    .from("menu")
+    .select("*")
+    .eq("is_available", true);
+
   menuData = data || [];
-  renderMenu();
+  renderCustomer();
 }
 
-function renderMenu() {
-  const app = document.getElementById("app");
+/* ================= CUSTOMER VIEW ================= */
 
-  if (adminMode) {
-    renderAdmin();
-    return;
-  }
+function renderCustomer() {
+  const app = document.getElementById("app");
 
   app.innerHTML = `
     <div style="display:flex;justify-content:space-between;padding:10px;">
@@ -44,16 +45,6 @@ function renderMenu() {
 
   renderCart();
 }
-
-window.openAdmin = function() {
-  adminMode = true;
-  renderAdmin();
-};
-
-window.closeAdmin = function() {
-  adminMode = false;
-  loadMenu();
-};
 
 window.addToCart = function(id) {
   const item = menuData.find(i => i.id === id);
@@ -76,11 +67,7 @@ function renderCart() {
 
   cartSection.innerHTML = `
     <div class="cart">
-      ${cart.map(i => `
-        <div style="display:flex;justify-content:space-between;">
-          <span>${i.name} x ${i.qty}</span>
-        </div>
-      `).join("")}
+      ${cart.map(i => `<div>${i.name} x ${i.qty}</div>`).join("")}
       <hr>
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
       <p>GST: ₹${gst.toFixed(2)}</p>
@@ -89,36 +76,18 @@ function renderCart() {
   `;
 }
 
-async function renderAdmin() {
+/* ================= ADMIN ================= */
+
+window.openAdmin = function() {
+  renderAdmin();
+};
+
+window.closeAdmin = function() {
+  loadMenu();
+};
+
+function renderAdmin() {
   const app = document.getElementById("app");
-
-  const { data: orders } = await supabase.from("orders1").select("*");
-  const { data: menu } = await supabase.from("menu").select("*");
-
-  const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
-
-  const monthlyRevenue = orders
-    .filter(o => o.order_month === new Date().getMonth() + 1)
-    .reduce((s, o) => s + (o.total_amount || 0), 0);
-
-  const itemCount = {};
-  orders.forEach(o => {
-    if (o.items) {
-      o.items.forEach(i => {
-        itemCount[i.name] = (itemCount[i.name] || 0) + i.qty;
-      });
-    }
-  });
-
-  const mostOrdered = Object.entries(itemCount).sort((a,b)=>b[1]-a[1])[0];
-  const leastOrdered = Object.entries(itemCount).sort((a,b)=>a[1]-b[1])[0];
-
-  const hourCount = {};
-  orders.forEach(o => {
-    hourCount[o.order_hour] = (hourCount[o.order_hour] || 0) + 1;
-  });
-
-  const peakHour = Object.entries(hourCount).sort((a,b)=>b[1]-a[1])[0];
 
   app.innerHTML = `
     <div style="display:flex;justify-content:space-between;">
@@ -126,39 +95,81 @@ async function renderAdmin() {
       <button onclick="closeAdmin()">Back</button>
     </div>
 
-    <h3>Total Revenue: ₹${totalRevenue.toFixed(2)}</h3>
-    <h3>This Month: ₹${monthlyRevenue.toFixed(2)}</h3>
+    <select id="adminSelector" onchange="handleAdminSelection()" style="margin:15px;padding:8px;">
+      <option value="">Select Option</option>
+      <option value="monthlySales">All Sales (This Month)</option>
+      <option value="menuManage">Manage Menu</option>
+    </select>
 
-    <h3>Most Ordered Item: ${mostOrdered ? mostOrdered[0] : "N/A"}</h3>
-    <h3>Least Ordered Item: ${leastOrdered ? leastOrdered[0] : "N/A"}</h3>
-    <h3>Peak Order Hour: ${peakHour ? peakHour[0] + ":00" : "N/A"}</h3>
-
-    <hr>
-    <h3>Menu Management</h3>
-
-    ${menu.map(item => `
-      <div class="card">
-        <input value="${item.name}" id="name-${item.id}">
-        <input value="${item.price}" id="price-${item.id}">
-        <button onclick="updateMenu(${item.id})">Update</button>
-        <button onclick="deleteMenu(${item.id})">Delete</button>
-      </div>
-    `).join("")}
-
-    <hr>
-    <h4>Add New Item</h4>
-    <input id="newName" placeholder="Item Name">
-    <input id="newPrice" placeholder="Price">
-    <button onclick="addMenu()">Add Item</button>
+    <div id="adminContent"></div>
   `;
 }
+
+window.handleAdminSelection = async function() {
+  const value = document.getElementById("adminSelector").value;
+  const content = document.getElementById("adminContent");
+
+  if (value === "monthlySales") {
+    const { data: orders } = await supabase.from("orders1").select("*");
+
+    const currentMonth = new Date().getMonth() + 1;
+
+    const monthlyOrders = orders.filter(o =>
+      new Date(o.created_at).getMonth() + 1 === currentMonth
+    );
+
+    const itemSummary = {};
+
+    monthlyOrders.forEach(order => {
+      if (order.items) {
+        order.items.forEach(item => {
+          itemSummary[item.name] =
+            (itemSummary[item.name] || 0) + item.qty;
+        });
+      }
+    });
+
+    content.innerHTML = `
+      <h3>Monthly Item Sales</h3>
+      ${Object.entries(itemSummary).map(([name, qty]) => `
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:5px;">
+          <span>${name}</span>
+          <strong>${qty}</strong>
+        </div>
+      `).join("")}
+    `;
+  }
+
+  if (value === "menuManage") {
+    const { data: menu } = await supabase.from("menu").select("*");
+
+    content.innerHTML = `
+      <h3>Menu Management</h3>
+
+      ${menu.map(item => `
+        <div class="card">
+          <input value="${item.name}" id="name-${item.id}">
+          <input value="${item.price}" id="price-${item.id}">
+          <button onclick="updateMenu(${item.id})">Update</button>
+          <button onclick="deleteMenu(${item.id})">Delete</button>
+        </div>
+      `).join("")}
+
+      <hr>
+      <h4>Add New Item</h4>
+      <input id="newName" placeholder="Item Name">
+      <input id="newPrice" placeholder="Price">
+      <button onclick="addMenu()">Add Item</button>
+    `;
+  }
+};
 
 window.addMenu = async function() {
   const name = document.getElementById("newName").value;
   const price = document.getElementById("newPrice").value;
 
   await supabase.from("menu").insert([{ name, price }]);
-  renderAdmin();
+  handleAdminSelection();
 };
 
 window.updateMenu = async function(id) {
@@ -166,12 +177,14 @@ window.updateMenu = async function(id) {
   const price = document.getElementById("price-"+id).value;
 
   await supabase.from("menu").update({ name, price }).eq("id", id);
-  renderAdmin();
+  handleAdminSelection();
 };
 
 window.deleteMenu = async function(id) {
   await supabase.from("menu").delete().eq("id", id);
-  renderAdmin();
+  handleAdminSelection();
 };
+
+/* ================= START ================= */
 
 loadMenu();
