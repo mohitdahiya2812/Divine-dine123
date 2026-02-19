@@ -6,135 +6,60 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
-let appliedCoupon = null;
-let currentCustomer = null;
-let orderLocked = false;
+let menuData = [];
+let adminMode = false;
 
 const GST_RATE = 0.05;
 
-const menu = [
-  { id: 1, name: "Paneer Butter Masala", price: 220 },
-  { id: 2, name: "Dal Tadka", price: 160 },
-  { id: 3, name: "Veg Biryani", price: 180 },
-  { id: 4, name: "Butter Naan", price: 40 },
-  { id: 5, name: "Chicken Curry", price: 260 }
-];
-
-function generateBillId() {
-  return "DD" + Date.now();
-}
-
-function calculateSubtotal() {
-  return cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-}
-
-function calculateDiscount(subtotal) {
-  if (!appliedCoupon) return 0;
-  if (appliedCoupon.discount_type === "percentage") {
-    return (subtotal * appliedCoupon.discount_value) / 100;
-  }
-  return appliedCoupon.discount_value;
+async function loadMenu() {
+  const { data } = await supabase.from("menu").select("*").eq("is_available", true);
+  menuData = data || [];
+  renderMenu();
 }
 
 function renderMenu() {
   const app = document.getElementById("app");
+
+  if (adminMode) {
+    renderAdmin();
+    return;
+  }
+
   app.innerHTML = `
-    <h2 style="padding:15px;">Divine Dine</h2>
-    ${menu.map(item => `
+    <div style="display:flex;justify-content:space-between;padding:10px;">
+      <h2>Divine Dine</h2>
+      <button onclick="openAdmin()">Admin</button>
+    </div>
+
+    ${menuData.map(item => `
       <div class="card">
         <h3>${item.name}</h3>
         <p>₹${item.price}</p>
         <button onclick="addToCart(${item.id})">Add</button>
       </div>
     `).join("")}
+
     <div id="cartSection"></div>
   `;
+
   renderCart();
 }
 
+window.openAdmin = function() {
+  adminMode = true;
+  renderAdmin();
+};
+
+window.closeAdmin = function() {
+  adminMode = false;
+  loadMenu();
+};
+
 window.addToCart = function(id) {
-  if (orderLocked) return;
-
-  const item = menu.find(i => i.id === id);
+  const item = menuData.find(i => i.id === id);
   const existing = cart.find(c => c.id === id);
-
   if (existing) existing.qty++;
   else cart.push({ ...item, qty: 1 });
-
-  renderCart();
-};
-
-window.changeQty = function(id, change) {
-  if (orderLocked) return;
-
-  const item = cart.find(c => c.id === id);
-  if (!item) return;
-
-  item.qty += change;
-  if (item.qty <= 0) cart = cart.filter(c => c.id !== id);
-
-  renderCart();
-};
-
-window.checkCustomer = async function() {
-  const phone = document.getElementById("custPhone").value.trim();
-  if (!phone) return;
-
-  const { data } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("phone", phone);
-
-  if (data && data.length > 0) {
-    currentCustomer = data[0];
-    document.getElementById("custName").value = currentCustomer.name;
-    alert("Welcome back " + currentCustomer.name);
-  } else {
-    currentCustomer = null;
-    document.getElementById("custName").value = "";
-  }
-};
-
-window.applyCoupon = async function() {
-  const codeInput = document.getElementById("couponInput").value.trim();
-  if (!codeInput) {
-    alert("Enter coupon code");
-    return;
-  }
-
-  const code = codeInput.toUpperCase();
-  const subtotal = calculateSubtotal();
-
-  const { data, error } = await supabase
-    .from("coupons")
-    .select("*")
-    .ilike("code", code);
-
-  if (error || !data || data.length === 0) {
-    alert("Invalid coupon");
-    return;
-  }
-
-  const coupon = data[0];
-  const now = new Date();
-
-  if (!coupon.is_active) return alert("Coupon inactive");
-  if (coupon.valid_from && new Date(coupon.valid_from) > now)
-    return alert("Coupon not started yet");
-  if (coupon.valid_until && new Date(coupon.valid_until) < now)
-    return alert("Coupon expired");
-  if (coupon.min_order_value > subtotal)
-    return alert("Minimum order not met");
-  if (coupon.max_total_uses && coupon.total_used >= coupon.max_total_uses)
-    return alert("Coupon limit reached");
-
-  appliedCoupon = coupon;
-  renderCart();
-  alert("Coupon Applied Successfully");
-};
-
-window.removeCoupon = function() {
-  appliedCoupon = null;
   renderCart();
 };
 
@@ -145,127 +70,108 @@ function renderCart() {
     return;
   }
 
-  const subtotal = calculateSubtotal();
-  const discount = calculateDiscount(subtotal);
-  const gst = (subtotal - discount) * GST_RATE;
-  const total = subtotal - discount + gst;
+  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const gst = subtotal * GST_RATE;
+  const total = subtotal + gst;
 
   cartSection.innerHTML = `
     <div class="cart">
-      ${cart.map(item => `
+      ${cart.map(i => `
         <div style="display:flex;justify-content:space-between;">
-          <span>${item.name}</span>
-          <div>
-            <button onclick="changeQty(${item.id}, -1)">-</button>
-            ${item.qty}
-            <button onclick="changeQty(${item.id}, 1)">+</button>
-          </div>
+          <span>${i.name} x ${i.qty}</span>
         </div>
       `).join("")}
       <hr>
       <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
-
-      ${appliedCoupon ? `
-        <p style="color:green;">
-          Coupon: ${appliedCoupon.code}
-          <button onclick="removeCoupon()">Remove</button>
-        </p>
-        <p style="color:green;">Discount: -₹${discount.toFixed(2)}</p>
-      ` : ""}
-
-      <p>GST (5%): ₹${gst.toFixed(2)}</p>
+      <p>GST: ₹${gst.toFixed(2)}</p>
       <h3>Total: ₹${total.toFixed(2)}</h3>
-
-      <input id="couponInput" placeholder="Enter Coupon Code" style="width:100%;padding:8px;margin:5px 0;">
-      <button onclick="applyCoupon()">Apply Coupon</button>
-
-      <input id="custPhone" placeholder="Phone Number" onblur="checkCustomer()" style="width:100%;padding:8px;margin:5px 0;">
-      <input id="custName" placeholder="Your Name" style="width:100%;padding:8px;margin:5px 0;">
-
-      <button id="payBtn" onclick="placeOrder()">Proceed to Pay</button>
     </div>
   `;
 }
 
-window.placeOrder = async function() {
-  if (orderLocked) return;
+async function renderAdmin() {
+  const app = document.getElementById("app");
 
-  const phone = document.getElementById("custPhone").value.trim();
-  const name = document.getElementById("custName").value.trim();
+  const { data: orders } = await supabase.from("orders1").select("*");
+  const { data: menu } = await supabase.from("menu").select("*");
 
-  if (!phone || !name) {
-    alert("Enter phone and name");
-    return;
-  }
+  const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
 
-  orderLocked = true;
-  const btn = document.getElementById("payBtn");
-  btn.disabled = true;
-  btn.innerText = "Processing...";
+  const monthlyRevenue = orders
+    .filter(o => o.order_month === new Date().getMonth() + 1)
+    .reduce((s, o) => s + (o.total_amount || 0), 0);
 
-  const subtotal = calculateSubtotal();
-  const discount = calculateDiscount(subtotal);
-  const gst = (subtotal - discount) * GST_RATE;
-  const total = subtotal - discount + gst;
-  const billId = generateBillId();
-
-  const { error } = await supabase.from("orders1").insert([
-    {
-      bill_id: billId,
-      customer_phone: phone,
-      customer_name: name,
-      table_number: "T1",
-      items: cart,
-      subtotal,
-      gst,
-      discount,
-      total_amount: total,
-      payment_mode: "QR"
+  const itemCount = {};
+  orders.forEach(o => {
+    if (o.items) {
+      o.items.forEach(i => {
+        itemCount[i.name] = (itemCount[i.name] || 0) + i.qty;
+      });
     }
-  ]);
+  });
 
-  if (error) {
-    alert("Order failed");
-    orderLocked = false;
-    btn.disabled = false;
-    btn.innerText = "Proceed to Pay";
-    return;
-  }
+  const mostOrdered = Object.entries(itemCount).sort((a,b)=>b[1]-a[1])[0];
+  const leastOrdered = Object.entries(itemCount).sort((a,b)=>a[1]-b[1])[0];
 
-  if (currentCustomer) {
-    await supabase.from("customers")
-      .update({
-        total_visits: currentCustomer.total_visits + 1,
-        total_spent: currentCustomer.total_spent + total,
-        last_visit: new Date()
-      })
-      .eq("phone", phone);
-  } else {
-    await supabase.from("customers").insert([
-      {
-        name,
-        phone,
-        total_visits: 1,
-        total_spent: total,
-        first_visit: new Date(),
-        last_visit: new Date()
-      }
-    ]);
-  }
+  const hourCount = {};
+  orders.forEach(o => {
+    hourCount[o.order_hour] = (hourCount[o.order_hour] || 0) + 1;
+  });
 
-  if (appliedCoupon) {
-    await supabase.from("coupons")
-      .update({ total_used: appliedCoupon.total_used + 1 })
-      .eq("id", appliedCoupon.id);
-  }
+  const peakHour = Object.entries(hourCount).sort((a,b)=>b[1]-a[1])[0];
 
-  alert("Order Successful! Bill ID: " + billId);
+  app.innerHTML = `
+    <div style="display:flex;justify-content:space-between;">
+      <h2>Admin Dashboard</h2>
+      <button onclick="closeAdmin()">Back</button>
+    </div>
 
-  cart = [];
-  appliedCoupon = null;
-  currentCustomer = null;
-  orderLocked = false;
-  renderMenu();
+    <h3>Total Revenue: ₹${totalRevenue.toFixed(2)}</h3>
+    <h3>This Month: ₹${monthlyRevenue.toFixed(2)}</h3>
+
+    <h3>Most Ordered Item: ${mostOrdered ? mostOrdered[0] : "N/A"}</h3>
+    <h3>Least Ordered Item: ${leastOrdered ? leastOrdered[0] : "N/A"}</h3>
+    <h3>Peak Order Hour: ${peakHour ? peakHour[0] + ":00" : "N/A"}</h3>
+
+    <hr>
+    <h3>Menu Management</h3>
+
+    ${menu.map(item => `
+      <div class="card">
+        <input value="${item.name}" id="name-${item.id}">
+        <input value="${item.price}" id="price-${item.id}">
+        <button onclick="updateMenu(${item.id})">Update</button>
+        <button onclick="deleteMenu(${item.id})">Delete</button>
+      </div>
+    `).join("")}
+
+    <hr>
+    <h4>Add New Item</h4>
+    <input id="newName" placeholder="Item Name">
+    <input id="newPrice" placeholder="Price">
+    <button onclick="addMenu()">Add Item</button>
+  `;
+}
+
+window.addMenu = async function() {
+  const name = document.getElementById("newName").value;
+  const price = document.getElementById("newPrice").value;
+
+  await supabase.from("menu").insert([{ name, price }]);
+  renderAdmin();
 };
 
-renderMenu();
+window.updateMenu = async function(id) {
+  const name = document.getElementById("name-"+id).value;
+  const price = document.getElementById("price-"+id).value;
+
+  await supabase.from("menu").update({ name, price }).eq("id", id);
+  renderAdmin();
+};
+
+window.deleteMenu = async function(id) {
+  await supabase.from("menu").delete().eq("id", id);
+  renderAdmin();
+};
+
+loadMenu();
