@@ -1,190 +1,224 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-const SUPABASE_URL = "https://ivvsoqjnzlxmgthfscer.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseUrl = "https://ivvsoqjnzlxmgthfscer.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow"; // keep your real key
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 let cart = [];
-let menuData = [];
+let currentCustomer = null;
+let isAdmin = false;
 
-const GST_RATE = 0.05;
+const app = document.getElementById("app");
 
-/* ================= LOAD MENU ================= */
+/* ---------------- SWITCH VIEWS ---------------- */
 
-async function loadMenu() {
-  const { data } = await supabase
-    .from("menu")
-    .select("*")
-    .eq("is_available", true);
-
-  menuData = data || [];
-  renderCustomer();
+function showCustomer() {
+  isAdmin = false;
+  renderMenu();
 }
 
-/* ================= CUSTOMER VIEW ================= */
+function showAdmin() {
+  isAdmin = true;
+  renderAdmin();
+}
 
-function renderCustomer() {
-  const app = document.getElementById("app");
+/* ---------------- HOME SCREEN ---------------- */
 
+function renderHome() {
   app.innerHTML = `
-    <div style="display:flex;justify-content:space-between;padding:10px;">
+    <div style="padding:20px;">
       <h2>Divine Dine</h2>
-      <button onclick="openAdmin()">Admin</button>
+      <button onclick="showCustomer()" style="padding:10px;margin:10px;">Customer</button>
+      <button onclick="showAdmin()" style="padding:10px;margin:10px;">Admin</button>
     </div>
+  `;
+}
 
-    ${menuData.map(item => `
+renderHome();
+
+/* ---------------- CUSTOMER MENU ---------------- */
+
+async function renderMenu() {
+  const { data: menu } = await supabase.from("menu").select("*");
+
+  let html = `
+    <button onclick="renderHome()">⬅ Back</button>
+    <h2>Menu</h2>
+  `;
+
+  menu.forEach(item => {
+    if (!item.available) return;
+
+    html += `
       <div class="card">
         <h3>${item.name}</h3>
-        <p>₹${item.price}</p>
-        <button onclick="addToCart(${item.id})">Add</button>
+        <p>₹ ${item.price}</p>
+        <button onclick="addToCart(${item.id}, '${item.name}', ${item.price})">
+          Add
+        </button>
       </div>
-    `).join("")}
+    `;
+  });
 
-    <div id="cartSection"></div>
+  html += `
+    <div class="cart">
+      <h3>Cart</h3>
+      ${renderCart()}
+    </div>
   `;
 
-  renderCart();
+  app.innerHTML = html;
 }
 
-window.addToCart = function(id) {
-  const item = menuData.find(i => i.id === id);
-  const existing = cart.find(c => c.id === id);
-  if (existing) existing.qty++;
-  else cart.push({ ...item, qty: 1 });
-  renderCart();
-};
+function addToCart(id, name, price) {
+  cart.push({ id, name, price });
+  renderMenu();
+}
 
 function renderCart() {
-  const cartSection = document.getElementById("cartSection");
-  if (!cart.length) {
-    cartSection.innerHTML = "";
-    return;
-  }
+  if (cart.length === 0) return "Cart empty";
 
-  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const gst = subtotal * GST_RATE;
-  const total = subtotal + gst;
+  let total = cart.reduce((sum, i) => sum + i.price, 0);
 
-  cartSection.innerHTML = `
-    <div class="cart">
-      ${cart.map(i => `<div>${i.name} x ${i.qty}</div>`).join("")}
-      <hr>
-      <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
-      <p>GST: ₹${gst.toFixed(2)}</p>
-      <h3>Total: ₹${total.toFixed(2)}</h3>
-    </div>
+  return `
+    ${cart.map(i => `<p>${i.name} - ₹${i.price}</p>`).join("")}
+    <hr>
+    <b>Total: ₹${total}</b><br><br>
+    <button onclick="placeOrder()">Proceed to Pay</button>
   `;
 }
 
-/* ================= ADMIN ================= */
+async function placeOrder() {
+  if (cart.length === 0) return alert("Cart empty");
 
-window.openAdmin = function() {
-  renderAdmin();
-};
+  const total = cart.reduce((sum, i) => sum + i.price, 0);
 
-window.closeAdmin = function() {
-  loadMenu();
-};
+  await supabase.from("orders1").insert([
+    {
+      total_amount: total,
+      created_at: new Date()
+    }
+  ]);
+
+  alert("Order Placed!");
+  cart = [];
+  renderMenu();
+}
+
+/* ---------------- ADMIN PANEL ---------------- */
 
 function renderAdmin() {
-  const app = document.getElementById("app");
-
   app.innerHTML = `
-    <div style="display:flex;justify-content:space-between;">
-      <h2>Admin Dashboard</h2>
-      <button onclick="closeAdmin()">Back</button>
-    </div>
+    <button onclick="renderHome()">⬅ Back</button>
+    <h2>Admin Panel</h2>
 
-    <select id="adminSelector" onchange="handleAdminSelection()" style="margin:15px;padding:8px;">
-      <option value="">Select Option</option>
-      <option value="monthlySales">All Sales (This Month)</option>
-      <option value="menuManage">Manage Menu</option>
-    </select>
+    <button onclick="showMonthlySales()">Monthly Sales</button>
+    <button onclick="showMostConsumed()">Most Consumed Item</button>
+    <button onclick="showLeastConsumed()">Least Consumed Item</button>
+    <button onclick="showPeakTiming()">Peak Order Timings</button>
+    <button onclick="showTopWaiter()">Top Waiter</button>
 
-    <div id="adminContent"></div>
+    <div id="adminContent" style="margin-top:20px;"></div>
   `;
 }
 
-window.handleAdminSelection = async function() {
-  const value = document.getElementById("adminSelector").value;
-  const content = document.getElementById("adminContent");
+/* ---------------- ADMIN FUNCTIONS ---------------- */
 
-  if (value === "monthlySales") {
-    const { data: orders } = await supabase.from("orders1").select("*");
+async function showMonthlySales() {
+  const { data } = await supabase
+    .from("order_items")
+    .select("item_name, quantity");
 
-    const currentMonth = new Date().getMonth() + 1;
+  let summary = {};
 
-    const monthlyOrders = orders.filter(o =>
-      new Date(o.created_at).getMonth() + 1 === currentMonth
-    );
+  data.forEach(item => {
+    summary[item.item_name] =
+      (summary[item.item_name] || 0) + item.quantity;
+  });
 
-    const itemSummary = {};
+  let html = "<h3>Monthly Sales</h3>";
 
-    monthlyOrders.forEach(order => {
-      if (order.items) {
-        order.items.forEach(item => {
-          itemSummary[item.name] =
-            (itemSummary[item.name] || 0) + item.qty;
-        });
-      }
-    });
-
-    content.innerHTML = `
-      <h3>Monthly Item Sales</h3>
-      ${Object.entries(itemSummary).map(([name, qty]) => `
-        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:5px;">
-          <span>${name}</span>
-          <strong>${qty}</strong>
-        </div>
-      `).join("")}
-    `;
+  for (let item in summary) {
+    html += `<p>${item} : ${summary[item]} sold</p>`;
   }
 
-  if (value === "menuManage") {
-    const { data: menu } = await supabase.from("menu").select("*");
+  document.getElementById("adminContent").innerHTML = html;
+}
 
-    content.innerHTML = `
-      <h3>Menu Management</h3>
+async function showMostConsumed() {
+  const { data } = await supabase
+    .from("order_items")
+    .select("item_name, quantity");
 
-      ${menu.map(item => `
-        <div class="card">
-          <input value="${item.name}" id="name-${item.id}">
-          <input value="${item.price}" id="price-${item.id}">
-          <button onclick="updateMenu(${item.id})">Update</button>
-          <button onclick="deleteMenu(${item.id})">Delete</button>
-        </div>
-      `).join("")}
+  let summary = {};
 
-      <hr>
-      <h4>Add New Item</h4>
-      <input id="newName" placeholder="Item Name">
-      <input id="newPrice" placeholder="Price">
-      <button onclick="addMenu()">Add Item</button>
-    `;
-  }
-};
+  data.forEach(item => {
+    summary[item.item_name] =
+      (summary[item.item_name] || 0) + item.quantity;
+  });
 
-window.addMenu = async function() {
-  const name = document.getElementById("newName").value;
-  const price = document.getElementById("newPrice").value;
+  let maxItem = Object.keys(summary).reduce((a, b) =>
+    summary[a] > summary[b] ? a : b
+  );
 
-  await supabase.from("menu").insert([{ name, price }]);
-  handleAdminSelection();
-};
+  document.getElementById("adminContent").innerHTML =
+    `<h3>Most Consumed</h3><p>${maxItem} (${summary[maxItem]} sold)</p>`;
+}
 
-window.updateMenu = async function(id) {
-  const name = document.getElementById("name-"+id).value;
-  const price = document.getElementById("price-"+id).value;
+async function showLeastConsumed() {
+  const { data } = await supabase
+    .from("order_items")
+    .select("item_name, quantity");
 
-  await supabase.from("menu").update({ name, price }).eq("id", id);
-  handleAdminSelection();
-};
+  let summary = {};
 
-window.deleteMenu = async function(id) {
-  await supabase.from("menu").delete().eq("id", id);
-  handleAdminSelection();
-};
+  data.forEach(item => {
+    summary[item.item_name] =
+      (summary[item.item_name] || 0) + item.quantity;
+  });
 
-/* ================= START ================= */
+  let minItem = Object.keys(summary).reduce((a, b) =>
+    summary[a] < summary[b] ? a : b
+  );
 
-loadMenu();
+  document.getElementById("adminContent").innerHTML =
+    `<h3>Least Consumed</h3><p>${minItem} (${summary[minItem]} sold)</p>`;
+}
+
+async function showPeakTiming() {
+  const { data } = await supabase
+    .from("orders1")
+    .select("created_at");
+
+  let hours = {};
+
+  data.forEach(order => {
+    let hour = new Date(order.created_at).getHours();
+    hours[hour] = (hours[hour] || 0) + 1;
+  });
+
+  let peak = Object.keys(hours).reduce((a, b) =>
+    hours[a] > hours[b] ? a : b
+  );
+
+  document.getElementById("adminContent").innerHTML =
+    `<h3>Peak Hour</h3><p>${peak}:00 (${hours[peak]} orders)</p>`;
+}
+
+async function showTopWaiter() {
+  const { data } = await supabase
+    .from("orders1")
+    .select("waiter_name");
+
+  let summary = {};
+
+  data.forEach(order => {
+    summary[order.waiter_name] =
+      (summary[order.waiter_name] || 0) + 1;
+  });
+
+  let top = Object.keys(summary).reduce((a, b) =>
+    summary[a] > summary[b] ? a : b
+  );
+
+  document.getElementById("adminContent").innerHTML =
+    `<h3>Top Waiter</h3><p>${top} (${summary[top]} orders)</p>`;
+}
