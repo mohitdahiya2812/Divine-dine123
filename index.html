@@ -1,26 +1,202 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Divine Dine</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: Arial; margin:0; background:#f4f4f4; }
-    header { background:#111; color:white; padding:15px; display:flex; justify-content:space-between; }
-    .btn { padding:8px 12px; border:none; cursor:pointer; margin:4px; }
-    .veg { background:green; color:white; }
-    .nonveg { background:red; color:white; }
-    .card { background:white; padding:15px; margin:10px; border-radius:8px; }
-    .cart { position:fixed; bottom:0; left:0; right:0; background:white; padding:15px; border-top:2px solid #ddd; }
-  </style>
+<meta charset="UTF-8">
+<title>Divine Dine</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body { font-family: Arial; margin:0; background:#f4f4f4; }
+header { background:#111; color:white; padding:15px; text-align:center; }
+button { padding:8px 12px; margin:5px; cursor:pointer; }
+.card { background:white; padding:15px; margin:10px; border-radius:8px; }
+.cart { background:white; padding:15px; margin:10px; border-radius:8px; }
+.admin-btn { background:black; color:white; }
+</style>
 </head>
 
 <body>
 
+<header>Divine Dine</header>
 <div id="app"></div>
 
-<!-- Supabase MUST load before app.js -->
-<script type="module" src="app.js"></script>
+<script>
+
+/* ---------------- SUPABASE ---------------- */
+
+const supabaseUrl = "https://ivvsoqjnzlxmgthfscer.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
+
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+/* ---------------- GLOBAL ---------------- */
+
+let cart = [];
+let discountAmount = 0;
+
+/* ---------------- HOME ---------------- */
+
+function renderHome() {
+  document.getElementById("app").innerHTML = `
+    <div style="padding:20px;">
+      <button onclick="renderCustomer()">Customer</button>
+      <button class="admin-btn" onclick="renderAdmin()">Admin</button>
+    </div>
+  `;
+}
+
+/* ---------------- CUSTOMER ---------------- */
+
+async function renderCustomer() {
+  const { data } = await supabase.from("menu").select("*");
+
+  let html = `<button onclick="renderHome()">⬅ Back</button><h2>Menu</h2>`;
+
+  data.forEach(item => {
+    if (!item.available) return;
+
+    html += `
+      <div class="card">
+        <h3>${item.name}</h3>
+        <p>₹ ${item.price}</p>
+        <button onclick="addToCart(${item.id}, '${item.name}', ${item.price})">
+          Add
+        </button>
+      </div>
+    `;
+  });
+
+  html += `<div class="cart">${renderCart()}</div>`;
+
+  document.getElementById("app").innerHTML = html;
+}
+
+function addToCart(id, name, price) {
+  cart.push({ id, name, price });
+  renderCustomer();
+}
+
+function renderCart() {
+  if (cart.length === 0) return "Cart empty";
+
+  let total = cart.reduce((sum, i) => sum + i.price, 0);
+  let finalTotal = total - discountAmount;
+
+  return `
+    ${cart.map(i => `<p>${i.name} - ₹${i.price}</p>`).join("")}
+    <hr>
+    <b>Total: ₹${total}</b><br>
+    <b>Discount: ₹${discountAmount}</b><br>
+    <b>Payable: ₹${finalTotal}</b><br><br>
+
+    <input id="couponInput" placeholder="Enter Coupon">
+    <button onclick="applyCoupon()">Apply</button>
+    <br><br>
+
+    <button onclick="placeOrder()">Proceed to Pay</button>
+  `;
+}
+
+async function applyCoupon() {
+  let code = document.getElementById("couponInput").value.trim();
+
+  const { data } = await supabase
+    .from("coupons")
+    .select("*")
+    .eq("code", code)
+    .eq("is_active", true)
+    .single();
+
+  if (!data) {
+    alert("Invalid Coupon");
+    return;
+  }
+
+  let total = cart.reduce((sum, i) => sum + i.price, 0);
+  discountAmount = Math.floor(total * 0.1);
+
+  alert("Coupon Applied!");
+  renderCustomer();
+}
+
+async function placeOrder() {
+  if (cart.length === 0) return alert("Cart empty");
+
+  let total = cart.reduce((sum, i) => sum + i.price, 0);
+  let finalTotal = total - discountAmount;
+
+  const { error } = await supabase.from("orders1").insert([
+    { total_amount: finalTotal }
+  ]);
+
+  if (error) {
+    alert("Order failed");
+    console.log(error);
+    return;
+  }
+
+  alert("Order Placed Successfully!");
+  cart = [];
+  discountAmount = 0;
+  renderCustomer();
+}
+
+/* ---------------- ADMIN ---------------- */
+
+function renderAdmin() {
+  document.getElementById("app").innerHTML = `
+    <button onclick="renderHome()">⬅ Back</button>
+    <h2>Admin Panel</h2>
+
+    <button onclick="monthlySales()">Monthly Sales</button>
+    <button onclick="peakHour()">Peak Order Hour</button>
+    <button onclick="totalOrders()">Total Orders</button>
+
+    <div id="adminData" style="margin-top:20px;"></div>
+  `;
+}
+
+async function monthlySales() {
+  const { data } = await supabase.from("orders1").select("total_amount");
+
+  let total = 0;
+  data.forEach(o => total += o.total_amount);
+
+  document.getElementById("adminData").innerHTML =
+    `<h3>Total Sales</h3><p>₹ ${total}</p>`;
+}
+
+async function peakHour() {
+  const { data } = await supabase.from("orders1").select("created_at");
+
+  let hours = {};
+
+  data.forEach(order => {
+    let hour = new Date(order.created_at).getHours();
+    hours[hour] = (hours[hour] || 0) + 1;
+  });
+
+  let peak = Object.keys(hours).reduce((a,b)=>
+    hours[a] > hours[b] ? a : b
+  );
+
+  document.getElementById("adminData").innerHTML =
+    `<h3>Peak Hour</h3><p>${peak}:00</p>`;
+}
+
+async function totalOrders() {
+  const { data } = await supabase.from("orders1").select("id");
+
+  document.getElementById("adminData").innerHTML =
+    `<h3>Total Orders</h3><p>${data.length}</p>`;
+}
+
+/* ---------------- START ---------------- */
+
+renderHome();
+
+</script>
 </body>
 </html>
-
