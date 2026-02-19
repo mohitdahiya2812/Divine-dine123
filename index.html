@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <title>Divine Dine</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
@@ -13,7 +12,7 @@ header { background:#111; color:white; padding:15px; text-align:center; }
 button { padding:8px 12px; margin:5px; cursor:pointer; }
 .card { background:white; padding:15px; margin:10px; border-radius:8px; }
 .cart { background:white; padding:15px; margin:10px; border-radius:8px; }
-.admin-btn { background:black; color:white; }
+.admin-btn { position:fixed; top:10px; right:10px; background:black; color:white; }
 input { padding:6px; margin:5px 0; width:100%; }
 </style>
 </head>
@@ -21,32 +20,22 @@ input { padding:6px; margin:5px 0; width:100%; }
 <body>
 
 <header>Divine Dine</header>
+<button class="admin-btn" onclick="renderAdmin()">Admin</button>
 <div id="app"></div>
 
 <script>
 
-/* SUPABASE */
 const supabaseUrl = "https://ivvsoqjnzlxmgthfscer.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
 
-/* IMPORTANT FIX HERE */
 const sb = supabase.createClient(supabaseUrl, supabaseKey);
 
 let cart = [];
 let discountAmount = 0;
 
-/* HOME */
-function renderHome() {
-  document.getElementById("app").innerHTML = `
-    <div style="padding:20px;">
-      <button onclick="renderCustomer()">Customer</button>
-      <button class="admin-btn" onclick="renderAdmin()">Admin</button>
-    </div>
-  `;
-}
-
-/* CUSTOMER MENU */
+/* LOAD CUSTOMER MENU BY DEFAULT */
 async function renderCustomer() {
+
   const { data, error } = await sb.from("menu").select("*");
 
   if (error) {
@@ -55,10 +44,10 @@ async function renderCustomer() {
     return;
   }
 
-  let html = `<button onclick="renderHome()">⬅ Back</button><h2>Menu</h2>`;
+  let html = `<h2 style="padding-left:10px;">Menu</h2>`;
 
   if (!data || data.length === 0) {
-    html += `<p>No items available</p>`;
+    html += `<p style="padding:10px;">No items available</p>`;
   } else {
     data.forEach(item => {
       if (!item.is_available) return;
@@ -76,6 +65,7 @@ async function renderCustomer() {
   }
 
   html += `<div class="cart">${renderCart()}</div>`;
+
   document.getElementById("app").innerHTML = html;
 }
 
@@ -84,8 +74,8 @@ function addToCart(id, name, price) {
   renderCustomer();
 }
 
-/* CART */
 function renderCart() {
+
   if (cart.length === 0) return "Cart empty";
 
   let total = cart.reduce((sum, i) => sum + i.price, 0);
@@ -106,8 +96,8 @@ function renderCart() {
   `;
 }
 
-/* COUPON */
 async function applyCoupon() {
+
   let code = document.getElementById("couponInput").value.trim();
 
   const { data } = await sb
@@ -129,9 +119,12 @@ async function applyCoupon() {
   renderCustomer();
 }
 
-/* PLACE ORDER */
 async function placeOrder() {
-  if (cart.length === 0) return alert("Cart empty");
+
+  if (cart.length === 0) {
+    alert("Cart empty");
+    return;
+  }
 
   let total = cart.reduce((sum, i) => sum + i.price, 0);
   let finalTotal = total - discountAmount;
@@ -154,35 +147,41 @@ async function placeOrder() {
 
 /* ADMIN PANEL */
 function renderAdmin() {
+
   document.getElementById("app").innerHTML = `
-    <button onclick="renderHome()">⬅ Back</button>
-    <h2>Admin Panel</h2>
+    <h2 style="padding-left:10px;">Admin Panel</h2>
 
-    <button onclick="monthlySales()">Monthly Sales</button>
-    <button onclick="totalOrders()">Total Orders</button>
+    <button onclick="showSales()">Total Sales</button>
+    <button onclick="showOrders()">Total Orders</button>
+    <button onclick="renderCustomer()">Back to Customer</button>
 
-    <div id="adminData" style="margin-top:20px;"></div>
+    <div id="adminData" style="margin-top:20px;padding:10px;"></div>
   `;
 }
 
-async function monthlySales() {
+async function showSales() {
+
   const { data } = await sb.from("orders1").select("total_amount");
 
   let total = 0;
-  data.forEach(o => total += o.total_amount);
+  if (data) {
+    data.forEach(o => total += o.total_amount);
+  }
 
   document.getElementById("adminData").innerHTML =
     `<h3>Total Sales</h3><p>₹ ${total}</p>`;
 }
 
-async function totalOrders() {
+async function showOrders() {
+
   const { data } = await sb.from("orders1").select("id");
 
   document.getElementById("adminData").innerHTML =
-    `<h3>Total Orders</h3><p>${data.length}</p>`;
+    `<h3>Total Orders</h3><p>${data ? data.length : 0}</p>`;
 }
 
-renderHome();
+/* INITIAL LOAD */
+renderCustomer();
 
 </script>
 
