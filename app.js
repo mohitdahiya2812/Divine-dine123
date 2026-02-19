@@ -6,6 +6,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cart = [];
+let isProcessing = false;
 const GST_RATE = 0.05;
 
 const menu = [
@@ -78,7 +79,7 @@ function renderCart() {
       <h3>Total: ₹${total.toFixed(2)}</h3>
       <input id="custName" placeholder="Your Name" style="width:100%;padding:8px;margin:5px 0;">
       <input id="custPhone" placeholder="Phone Number" style="width:100%;padding:8px;margin:5px 0;">
-      <button onclick="placeOrder()">Proceed to Pay</button>
+      <button id="payBtn" onclick="placeOrder()">Proceed to Pay</button>
     </div>
   `;
 }
@@ -96,66 +97,92 @@ window.changeQty = function(id, change) {
 };
 
 window.placeOrder = async function() {
-  const name = document.getElementById("custName").value;
-  const phone = document.getElementById("custPhone").value;
+  if (isProcessing) return;
 
-  if (!name || !phone) {
-    alert("Please enter name and phone");
-    return;
-  }
+  const button = document.getElementById("payBtn");
+  button.disabled = true;
+  button.innerText = "Processing...";
+  isProcessing = true;
 
-  let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  let gst = subtotal * GST_RATE;
-  let total = subtotal + gst;
+  try {
+    const name = document.getElementById("custName").value.trim();
+    const phone = document.getElementById("custPhone").value.trim();
 
-  const billId = generateBillId();
-
-  // Save Order
-  await supabase.from("orders1").insert([
-    {
-      bill_id: billId,
-      customer_phone: phone,
-      customer_name: name,
-      table_number: "T1",
-      items: cart,
-      subtotal: subtotal,
-      gst: gst,
-      discount: 0,
-      total_amount: total,
-      payment_mode: "Fake"
+    if (!name || !phone) {
+      alert("Please enter name and phone");
+      button.disabled = false;
+      button.innerText = "Proceed to Pay";
+      isProcessing = false;
+      return;
     }
-  ]);
 
-  // Update or Insert Customer
-  const { data: existing } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("phone", phone)
-    .single();
+    let subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+    let gst = subtotal * GST_RATE;
+    let total = subtotal + gst;
+    const billId = generateBillId();
 
-  if (existing) {
-    await supabase.from("customers").update({
-      total_visits: existing.total_visits + 1,
-      total_spent: existing.total_spent + total,
-      last_visit: new Date()
-    }).eq("phone", phone);
-  } else {
-    await supabase.from("customers").insert([
+    // INSERT ORDER
+    const { error: orderError } = await supabase.from("orders1").insert([
       {
-        name: name,
-        phone: phone,
-        total_visits: 1,
-        total_spent: total,
-        first_visit: new Date(),
-        last_visit: new Date()
+        bill_id: billId,
+        customer_phone: phone,
+        customer_name: name,
+        table_number: "T1",
+        items: JSON.parse(JSON.stringify(cart)),
+        subtotal: subtotal,
+        gst: gst,
+        discount: 0,
+        total_amount: total,
+        payment_mode: "Fake"
       }
     ]);
+
+    if (orderError) {
+      console.error(orderError);
+      alert("Order saving failed");
+      button.disabled = false;
+      button.innerText = "Proceed to Pay";
+      isProcessing = false;
+      return;
+    }
+
+    // CHECK CUSTOMER
+    const { data: existingCustomer } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("phone", phone)
+      .single();
+
+    if (existingCustomer) {
+      await supabase.from("customers").update({
+        total_visits: existingCustomer.total_visits + 1,
+        total_spent: existingCustomer.total_spent + total,
+        last_visit: new Date()
+      }).eq("phone", phone);
+    } else {
+      await supabase.from("customers").insert([
+        {
+          name: name,
+          phone: phone,
+          total_visits: 1,
+          total_spent: total,
+          first_visit: new Date(),
+          last_visit: new Date()
+        }
+      ]);
+    }
+
+    alert("Order Placed Successfully! Bill ID: " + billId);
+
+    cart = [];
+    renderMenu();
+
+  } catch (err) {
+    console.error(err);
+    alert("Unexpected error occurred");
   }
 
-  alert("Order Placed Successfully! Bill ID: " + billId);
-
-  cart = [];
-  renderMenu();
+  isProcessing = false;
 };
 
 renderMenu();
