@@ -24,20 +24,16 @@ button { padding:8px 12px; margin:5px; cursor:pointer; }
 
 <script>
 
-/* ---------------- SUPABASE ---------------- */
-
+/* SUPABASE */
 const supabaseUrl = "https://ivvsoqjnzlxmgthfscer.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dnNvcWpuemx4bWd0aGZzY2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwMTAsImV4cCI6MjA4NzAxOTAxMH0.rfJ_31yC5iKcRrfMWndJbOT5-EaKdAtFUy9KGaz1Mow";
 
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-/* ---------------- GLOBAL ---------------- */
-
 let cart = [];
 let discountAmount = 0;
 
-/* ---------------- HOME ---------------- */
-
+/* HOME */
 function renderHome() {
   document.getElementById("app").innerHTML = `
     <div style="padding:20px;">
@@ -47,15 +43,19 @@ function renderHome() {
   `;
 }
 
-/* ---------------- CUSTOMER ---------------- */
-
+/* CUSTOMER */
 async function renderCustomer() {
-  const { data } = await supabase.from("menu").select("*");
+  const { data, error } = await supabase.from("menu").select("*");
+
+  if (error) {
+    document.getElementById("app").innerHTML = "Error loading menu";
+    return;
+  }
 
   let html = `<button onclick="renderHome()">⬅ Back</button><h2>Menu</h2>`;
 
   data.forEach(item => {
-    if (!item.available) return;
+    if (!item.is_available) return;
 
     html += `
       <div class="card">
@@ -143,15 +143,13 @@ async function placeOrder() {
   renderCustomer();
 }
 
-/* ---------------- ADMIN ---------------- */
-
+/* ADMIN */
 function renderAdmin() {
   document.getElementById("app").innerHTML = `
     <button onclick="renderHome()">⬅ Back</button>
     <h2>Admin Panel</h2>
 
     <button onclick="monthlySales()">Monthly Sales</button>
-    <button onclick="peakHour()">Peak Order Hour</button>
     <button onclick="totalOrders()">Total Orders</button>
 
     <div id="adminData" style="margin-top:20px;"></div>
@@ -168,32 +166,12 @@ async function monthlySales() {
     `<h3>Total Sales</h3><p>₹ ${total}</p>`;
 }
 
-async function peakHour() {
-  const { data } = await supabase.from("orders1").select("created_at");
-
-  let hours = {};
-
-  data.forEach(order => {
-    let hour = new Date(order.created_at).getHours();
-    hours[hour] = (hours[hour] || 0) + 1;
-  });
-
-  let peak = Object.keys(hours).reduce((a,b)=>
-    hours[a] > hours[b] ? a : b
-  );
-
-  document.getElementById("adminData").innerHTML =
-    `<h3>Peak Hour</h3><p>${peak}:00</p>`;
-}
-
 async function totalOrders() {
   const { data } = await supabase.from("orders1").select("id");
 
   document.getElementById("adminData").innerHTML =
     `<h3>Total Orders</h3><p>${data.length}</p>`;
 }
-
-/* ---------------- START ---------------- */
 
 renderHome();
 
